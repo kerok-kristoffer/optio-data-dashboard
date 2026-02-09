@@ -18,3 +18,18 @@ def fmt_opt(x) -> str:
         return f"{float(x):,.0f}"
     except Exception:
         return "—"
+
+
+def human(n: float) -> str:
+    # 1234 -> 1.23K, 1_234_567 -> 1.23M, 1_234_567_890 -> 1.23B
+    n = float(n)
+    for unit, div in [("T", 1e12), ("B", 1e9), ("M", 1e6), ("K", 1e3)]:
+        if abs(n) >= div:
+            return f"{n/div:.2f}{unit}"
+    return f"{n:,.0f}"
+
+def fmt_int(n) -> str:
+    try:
+        return f"{int(n):,}"
+    except Exception:
+        return "—"
