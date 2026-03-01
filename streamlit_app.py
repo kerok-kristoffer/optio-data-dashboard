@@ -5,8 +5,6 @@ from databricks import sql
 
 from util.helpers import to_opt_series, to_opt, human, fmt_int
 
-st.set_page_config(page_title="Optio Insights", layout="wide")
-
 from dotenv import load_dotenv
 
 st.set_page_config(page_title="Optio Insights", layout="wide")
@@ -48,8 +46,11 @@ if not ok:
 
 # --------- Query helper ---------
 
-@st.cache_data(ttl=300)  # cache for 5 minutes
+@st.cache_data(ttl=3600)  # cache for 60 minutes
 def query_df(q: str, params=None) -> pd.DataFrame:
+    params = params or {}
+    # normalize params so caching keys are stable
+    params = dict(sorted(params.items()))
     try:
         with sql.connect(
             server_hostname=DB["server_hostname"],
@@ -65,6 +66,18 @@ def query_df(q: str, params=None) -> pd.DataFrame:
         # If your local DNS flakes, this will show cleanly instead of hanging forever.
         raise RuntimeError(f"Databricks query failed (possible local DNS/network). Details: {e}") from e
 
+
+# ------------------- dt options -----------------
+
+@st.cache_data(ttl=3600)
+def get_dt_options() -> list[str]:
+    df = query_df("""
+        SELECT dt
+        FROM optio_warehouse.gold.gold_supply_stake_lock_daily
+        ORDER BY dt DESC
+        LIMIT 365
+    """)
+    return df["dt"].tolist()
 # --------- UI header ---------
 
 st.title("Optio Daily Insights (MVP)")
@@ -73,27 +86,38 @@ top_left, top_right = st.columns([3, 1], vertical_alignment="bottom")
 with top_right:
     if st.button("Refresh data"):
         st.cache_data.clear()
+        st.session_state.loaded_dt = None
         st.rerun()
 
 # Available dates
-try:
-    dt_df = query_df("""
-        SELECT dt
-        FROM optio_warehouse.gold.gold_supply_stake_lock_daily
-        ORDER BY dt DESC
-        LIMIT 365
-    """)
-except Exception as e:
-    st.error(str(e))
-    st.stop()
 
-dt_options = dt_df["dt"].tolist() if not dt_df.empty else []
+dt_options = get_dt_options()
 if not dt_options:
     st.error("No dt values found in gold_supply_stake_lock_daily.")
     st.stop()
 
 dt = st.selectbox("Select dt", dt_options)
 st.caption(f"Showing Gold-layer aggregates for dt = {dt}. Values displayed in OPT.")
+
+if "loaded_dt" not in st.session_state:
+    st.session_state.loaded_dt = None
+
+load_clicked = st.button("Load", type="primary")
+
+# Auto-load on first page view (optional). If you want strict manual load, remove this block.
+if st.session_state.loaded_dt is None and dt_options:
+    st.session_state.loaded_dt = dt  # load default once
+
+if load_clicked:
+    st.session_state.loaded_dt = dt
+
+if st.session_state.loaded_dt is None:
+    st.stop()
+
+if st.session_state.loaded_dt != dt:
+    st.info("Select a date and click **Load** to refresh the dashboard.")
+
+dt = st.session_state.loaded_dt
 
 # --------- Supply KPIs + percent breakdown ---------
 
@@ -122,7 +146,7 @@ locked_opt = to_opt(r["locked_uopt"])
 liquid_opt = to_opt(r["liquid_est_uopt"])
 
 # Quick sanity check in the UI: recompute liquid
-recomputed_liquid = total_opt - staked_opt - locked_opt
+recomputed_liquid = total_opt - staked_opt
 liquid_delta = liquid_opt - recomputed_liquid
 
 c1, c2, c3, c4 = st.columns(4)
@@ -188,7 +212,7 @@ except Exception as e:
 if buckets.empty:
     st.warning("No unlock bucket data for this dt.")
 else:
-    BUCKET_ORDER = ["1W", "1M", "6M", "12M", "18M", "24M", "24M+"]
+    BUCKET_ORDER = ["<1W", "<1M", "<6M", "<12M", "<18M", "<24M", "24M"]
 
     buckets["unlock_bucket"] = pd.Categorical(
         buckets["unlock_bucket"], categories=BUCKET_ORDER, ordered=True
