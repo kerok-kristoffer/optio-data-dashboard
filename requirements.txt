@@ -2,3 +2,4 @@ streamlit
 pandas
 databricks-sql-connector
 python-dotenv
+plotly>=5.0.0

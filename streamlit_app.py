@@ -145,54 +145,79 @@ staked_opt = to_opt(r["staked_uopt"])
 locked_opt = to_opt(r["locked_uopt"])
 liquid_opt = to_opt(r["liquid_est_uopt"])
 
-# Quick sanity check in the UI: recompute liquid
-recomputed_liquid = total_opt - staked_opt
-liquid_delta = liquid_opt - recomputed_liquid
+import plotly.express as px
 
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Total Supply (OPT)", human(total_opt))
-c1.caption(f"{total_opt:,.0f}")
+total_opt = float(total_opt)
+staked_opt = float(staked_opt)
+locked_opt = float(locked_opt)
 
-c2.metric("Staked (OPT)", human(staked_opt))
-c2.caption(f"{staked_opt:,.0f}")
+if locked_opt > staked_opt + 1e-9:
+    st.warning("Data sanity: locked > staked (should not happen).")
+if staked_opt > total_opt + 1e-9:
+    st.warning("Data sanity: staked > total (should not happen).")
 
-c3.metric("Locked (OPT)", human(locked_opt))
-c3.caption(f"{locked_opt:,.0f}")
+staked_unlocked_opt = max(staked_opt - locked_opt, 0.0)
+liquid_opt = max(total_opt - staked_opt, 0.0)
 
-c4.metric("Liquid est. (OPT)", human(liquid_opt))
-c4.caption(f"{liquid_opt:,.0f}")
-
-# Liquid sanity hint (should be ~0 difference; if not, show it)
-if abs(liquid_delta) > 0.5:  # allow tiny rounding drift
-    st.warning(
-        f"Sanity check: liquid_est differs from (total - staked - locked) by {liquid_delta:,.4f} OPT"
-    )
-
-st.divider()
-
-st.subheader("Supply Breakdown (%)")
-pct_df = pd.DataFrame({
-    "Component": ["Staked", "Locked", "Liquid est."],
-    "Percent": [
-        (staked_opt / total_opt * 100) if total_opt else 0.0,
-        (locked_opt / total_opt * 100) if total_opt else 0.0,
-        (liquid_opt / total_opt * 100) if total_opt else 0.0,
-    ],
-    "OPT": [staked_opt, locked_opt, liquid_opt],
+donut_df = pd.DataFrame({
+    "Component": ["Staked & locked", "Staked (unlocked)", "Liquid (not staked)"],
+    "OPT": [locked_opt, staked_unlocked_opt, liquid_opt],
 })
-pct_df["Percent_label"] = pct_df["Percent"].map(lambda x: f"{x:.2f}%")
-pct_df["OPT_label"] = pct_df["OPT"].map(human)
+donut_df["Percent"] = (donut_df["OPT"] / total_opt * 100) if total_opt else 0.0
+donut_df["OPT_label"] = donut_df["OPT"].map(human)
+donut_df["Percent_label"] = donut_df["Percent"].map(lambda x: f"{x:.2f}%")
 
 left, right = st.columns([2, 1], vertical_alignment="top")
+
 with left:
-    st.caption("Percent of total supply (Staked / Locked / Liquid est.)")
-    st.bar_chart(pct_df.set_index("Component")["Percent"])
+    # Keep a consistent ordering everywhere
+    COMPONENT_ORDER = ["Staked & locked", "Staked (unlocked)", "Liquid (not staked)"]
+
+    # Unified Optio-ish blues (light -> dark)
+    COLOR_MAP = {
+        "Liquid (not staked)": "#93C5FD",  # light blue
+        "Staked (unlocked)": "#3B82F6",  # mid blue
+        "Staked & locked": "#1E3A8A",  # dark blue
+    }
+
+    donut_df["Component"] = pd.Categorical(
+        donut_df["Component"], categories=COMPONENT_ORDER, ordered=True
+    )
+    donut_df = donut_df.sort_values("Component")
+
+    fig = px.pie(
+        donut_df,
+        values="OPT",
+        names="Component",
+        hole=0.55,
+        category_orders={"Component": COMPONENT_ORDER},
+        color="Component",
+        color_discrete_map=COLOR_MAP,
+    )
+
+    fig.update_traces(
+        textinfo="percent+label",
+        textposition="inside",
+        hovertemplate="<b>%{label}</b><br>%{value:,.0f} OPT<br>%{percent}<extra></extra>",
+    )
+
+    fig.update_layout(
+        margin=dict(l=10, r=10, t=30, b=10),
+        legend_title_text="",
+    )
+    # Center label (optional but nice)
+    fig.add_annotation(
+        text=f"{human(total_opt)}<br><span style='font-size:12px'>Total OPT</span>",
+        x=0.5, y=0.5, showarrow=False, font=dict(size=16)
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
 with right:
-    show = pct_df[["Component", "Percent_label", "OPT_label"]].rename(
+    show = donut_df[["Component", "Percent_label", "OPT_label"]].rename(
         columns={"Percent_label": "% of Supply", "OPT_label": "Amount (OPT)"}
     )
     st.dataframe(show, use_container_width=True, hide_index=True)
-
 st.divider()
 
 # --------- Unlock buckets ---------
