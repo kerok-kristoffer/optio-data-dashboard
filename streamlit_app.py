@@ -31,6 +31,10 @@ def validate_db_config(DB):
     token = DB.get("access_token", "")
 
     if not host or not http_path or not token:
+        st.write("Has databricks secrets:", "databricks" in st.secrets)
+        st.write("Hostname present:", bool(DB.get("server_hostname")))
+        st.write("HTTP path present:", bool(DB.get("http_path")))
+        st.write("Token present:", bool(DB.get("access_token")))
         return False, "Missing one or more of server_hostname/http_path/access_token."
     if host.startswith("http://") or host.startswith("https://"):
         return False, "server_hostname must NOT include http(s):// (use only the hostname)."
@@ -333,7 +337,7 @@ with row1_left:
         font=dict(size=16),
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
     st.caption(
         f"Donut is normalized to chain total supply. Circulating supply is from Optio API (as of {supply_dt_used}). "
         f"Non-circulating = chain total - API circulating."
@@ -343,7 +347,7 @@ with row1_right:
     show = donut_df[["Component", "Percent_label", "OPT_label"]].rename(
         columns={"Percent_label": "% of Supply", "OPT_label": "Amount (OPT)"}
     )
-    st.dataframe(show, use_container_width=True, hide_index=True)
+    st.dataframe(show, width='stretch', hide_index=True)
 
 st.divider()
 
@@ -387,14 +391,14 @@ with row2_left:
             ),
         )
         fig.update_layout(**base_layout("Total locked OPT by time-to-unlock bucket"))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         show = buckets[["unlock_bucket", "locked_opt", "wallet_count", "lock_count"]].copy()
         show["locked_OPT"] = show["locked_opt"].map(human)
         show["wallet_count"] = show["wallet_count"].map(fmt_int)
         show["lock_count"] = show["lock_count"].map(fmt_int)
         show = show.drop(columns=["locked_opt"]).rename(columns={"unlock_bucket": "bucket"})
-        st.dataframe(show, use_container_width=True, hide_index=True)
+        st.dataframe(show, width='stretch', hide_index=True)
 
 with row2_right:
     st.subheader("Locked Holder Distribution")
@@ -452,13 +456,13 @@ with row2_right:
         )
         fig.update_traces(customdata=customdata, hovertemplate=hovertemplate)
         fig.update_layout(**base_layout(chart_title))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         show = dist[["holding_bucket", "wallet_count", "total_locked_opt"]].copy()
         show["wallet_count"] = show["wallet_count"].map(fmt_int)
         show["total_locked_OPT"] = show["total_locked_opt"].map(human)
         show = show.drop(columns=["total_locked_opt"]).rename(columns={"holding_bucket": "bucket"})
-        st.dataframe(show, use_container_width=True, hide_index=True)
+        st.dataframe(show, width='stretch', hide_index=True)
 
 st.divider()
 
