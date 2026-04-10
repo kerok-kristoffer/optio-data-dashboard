@@ -225,7 +225,7 @@ def base_layout(title=None):
 
 # --------- UI header ---------
 
-st.title("Optio Daily Insights (MVP)")
+st.title("Optio Daily Insights")
 
 _, top_right = st.columns([3, 1], vertical_alignment="bottom")
 with top_right:
