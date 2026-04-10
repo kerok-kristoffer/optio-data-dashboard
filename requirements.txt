@@ -1,5 +1,5 @@
 streamlit
 pandas
-databricks-sql-connector
+databricks-sql-connector==4.2.4
 python-dotenv
 plotly>=5.0.0
