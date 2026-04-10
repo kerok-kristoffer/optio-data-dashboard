@@ -59,12 +59,12 @@ def query_df(q: str, params=None) -> pd.DataFrame:
             access_token=DB["access_token"],
         ) as conn:
             with conn.cursor() as cur:
-                cur.execute(q, params or {})
+                cur.execute(q, parameters=params)
                 rows = cur.fetchall()
                 cols = [d[0] for d in cur.description]
         return pd.DataFrame(rows, columns=cols)
     except Exception as e:
-        raise RuntimeError(f"Databricks query failed (possible local DNS/network). Details: {e}") from e
+        raise RuntimeError(f"Databricks query failed. Details: {e}") from e
 
 
 # ------------------- cached data loaders -----------------
