@@ -31,10 +31,6 @@ def validate_db_config(DB):
     token = DB.get("access_token", "")
 
     if not host or not http_path or not token:
-        st.write("Has databricks secrets:", "databricks" in st.secrets)
-        st.write("Hostname present:", bool(DB.get("server_hostname")))
-        st.write("HTTP path present:", bool(DB.get("http_path")))
-        st.write("Token present:", bool(DB.get("access_token")))
         return False, "Missing one or more of server_hostname/http_path/access_token."
     if host.startswith("http://") or host.startswith("https://"):
         return False, "server_hostname must NOT include http(s):// (use only the hostname)."
@@ -206,7 +202,8 @@ PLOTLY_SLATE = "#64748B"
 
 BUCKET_ORDER = ["<1W", "<1M", "<6M", "<12M", "<18M", "<24M", "24M"]
 HOLDER_ORDER = ["<10k", "10k-100k", "100k-1M", "1M-10M", "10M-50M", "50M-100M", "100M+"]
-DRIFT_LINE_COLORS = ["#3B82F6", "#60A5FA", "#93C5FD", "#BFDBFE", "#DBEAFE", "#E0F2FE", "#EFF6FF"]
+DRIFT_LINE_COLORS = ["#1E3A8A", "#3B82F6", "#60A5FA", "#93C5FD", "#BFDBFE", "#DBEAFE", "#E0F2FE"]
+DRIFT_LINE_COLORS_ALT = ["#1E3A8A", "#2563EB", "#3B82F6", "#60A5FA", "#93C5FD", "#BFDBFE", "#DBEAFE"]
 
 WEEKDAY_BASIS = 2  # Monday=0, Tuesday=1, Wednesday=2, ...
 MAX_HISTORICAL_SNAPSHOTS = 10
@@ -526,7 +523,92 @@ else:
         ),
     )
     fig.update_layout(**base_layout(chart_title))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
+
+
+    st.subheader("Unlock Drift Comparison")
+    st.caption(
+        f"Weekly comparison of recent unlock snapshots. Historical lines use {WEEKDAY_LABEL.lower()} "
+        f"to reduce day-to-day noise, while bars show the latest available snapshot. "
+        f"If major unlock spikes shift to later weeks over time, that can indicate lock extensions."
+    )
+
+    try:
+        drift = get_unlock_drift_df_for_dates(selected_dts)
+    except Exception as e:
+        st.error(str(e))
+        st.stop()
+
+    if drift.empty:
+        st.info("No historical unlock drift data available.")
+    else:
+        drift["dt"] = pd.to_datetime(drift["dt"])
+        drift["unlock_week"] = pd.to_datetime(drift["unlock_week"])
+        drift["unlocking_opt"] = to_opt_series(drift["unlocking_uopt"])
+
+        snapshot_dates = sorted(drift["dt"].dropna().unique())
+        latest_snapshot = max(snapshot_dates)
+
+        fig = go.Figure()
+
+        current = drift[drift["dt"] == latest_snapshot].sort_values("unlock_week")
+        fig.add_trace(
+            go.Bar(
+                x=current["unlock_week"],
+                y=current["unlocking_opt"],
+                name=f"Current ({pd.Timestamp(latest_snapshot).date()})",
+                marker_color=PLOTLY_DARK,
+                opacity=0.8,
+                hovertemplate=(
+                    "<b>Unlock week:</b> %{x|%Y-%m-%d}<br>"
+                    "<b>Unlocking:</b> %{y:,.0f} OPT<br>"
+                    "<extra></extra>"
+                ),
+            )
+        )
+
+        previous_snapshots = sorted([d for d in snapshot_dates if d != latest_snapshot], reverse=True)
+        for i, snap_dt in enumerate(previous_snapshots):
+            snap = drift[drift["dt"] == snap_dt].sort_values("unlock_week")
+            color = DRIFT_LINE_COLORS_ALT[min(i, len(DRIFT_LINE_COLORS_ALT) - 1)]
+            fig.add_trace(
+                go.Scatter(
+                    x=snap["unlock_week"],
+                    y=snap["unlocking_opt"],
+                    mode="lines",
+                    name=str(pd.Timestamp(snap_dt).date()),
+                    line=dict(color=color, width=2),
+                    opacity=max(0.35, 0.78 - i * 0.1),
+                    hovertemplate=(
+                        f"<b>Snapshot:</b> {pd.Timestamp(snap_dt).date()}<br>"
+                        "<b>Unlock week:</b> %{x|%Y-%m-%d}<br>"
+                        "<b>Unlocking:</b> %{y:,.0f} OPT<br>"
+                        "<extra></extra>"
+                    ),
+                )
+            )
+
+        fig.update_layout(
+            **base_layout("Unlock drift comparison"),
+            barmode="overlay",
+            hovermode="x unified",
+            xaxis=dict(type="date"),
+        )
+        st.plotly_chart(fig, width='stretch')
+
+    st.caption("Largest upcoming unlock dates (top 30)")
+    if top_unlocks.empty:
+        st.info("No top unlock dates available for this dt.")
+    else:
+        top_unlocks["unlock_date"] = pd.to_datetime(top_unlocks["unlock_date"])
+        top_unlocks["unlocking_opt"] = to_opt_series(top_unlocks["unlocking_uopt"])
+        top_unlocks["unlocking_OPT"] = top_unlocks["unlocking_opt"].map(human)
+        top_unlocks["wallet_count"] = top_unlocks["wallet_count"].map(fmt_int)
+        top_unlocks["lock_count"] = top_unlocks["lock_count"].map(fmt_int)
+        show = top_unlocks[["unlock_date", "days_to_unlock", "unlocking_OPT", "wallet_count", "lock_count"]]
+        st.dataframe(show, width='stretch', hide_index=True)
+
+
 
 st.divider()
 
